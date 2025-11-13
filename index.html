@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>輪唱プレイヤー（100声対応・0.001秒）</title>
+<title>輪唱プレイヤー（長押し調整対応）</title>
 <style>
   body{font-family:system-ui,-apple-system,"ヒラギノ角ゴ ProN","Hiragino Kaku Gothic ProN","メイリオ",Meiryo,sans-serif;padding:18px;background:#f6f8fa}
   .row{display:flex;gap:8px;align-items:center;margin:8px 0}
@@ -16,7 +16,7 @@
 </style>
 </head>
 <body>
-  <h2>輪唱プレイヤー（最大100声・0.001秒単位）</h2>
+  <h2>輪唱プレイヤー（最大100声・長押し調整対応）</h2>
 
   <div class="row">
     <label>MP3/MP4ファイル</label>
@@ -55,7 +55,7 @@
 
   <div id="voicesContainer"></div>
 
-  <p class="note">0.001秒単位で遅延を設定可能。最大100声まで同時に輪唱。</p>
+  <p class="note">0.001秒単位で遅延を設定可能。長押しで連続調整も可能。最大100声まで同時に輪唱。</p>
 
 <script>
 (async()=>{
@@ -83,24 +83,36 @@
     }
   }
 
-  // 遅延スライダー更新
-  delaySecEl.addEventListener('input',()=>delayLabel.textContent=parseFloat(delaySecEl.value).toFixed(3)+'s');
+  // 遅延ラベル更新
+  function updateDelayLabel(){
+    delayLabel.textContent=parseFloat(delaySecEl.value).toFixed(3)+'s';
+  }
 
-  // 遅延ボタン
-  delayMinusBtn.addEventListener('click',()=>{
-    let v=parseFloat(delaySecEl.value);
-    v=Math.max(0,v-0.001);
-    delaySecEl.value=v.toFixed(3);
-    delayLabel.textContent=v.toFixed(3)+'s';
-  });
-  delayPlusBtn.addEventListener('click',()=>{
-    let v=parseFloat(delaySecEl.value);
-    v=Math.min(1,v+0.001);
-    delaySecEl.value=v.toFixed(3);
-    delayLabel.textContent=v.toFixed(3)+'s';
-  });
+  delaySecEl.addEventListener('input',updateDelayLabel);
 
-  // マスター音量
+  // 長押し処理用
+  function setupHoldButton(button,delta){
+    let interval;
+    const step=()=>{ 
+      let v=parseFloat(delaySecEl.value);
+      v=Math.min(1,Math.max(0,v+delta));
+      delaySecEl.value=v.toFixed(3);
+      updateDelayLabel();
+    };
+    button.addEventListener('mousedown',()=>{
+      step();
+      interval=setInterval(step,50); // 50msごとに連続調整
+    });
+    button.addEventListener('mouseup',()=>clearInterval(interval));
+    button.addEventListener('mouseleave',()=>clearInterval(interval));
+    button.addEventListener('touchstart',e=>{e.preventDefault();step();interval=setInterval(step,80);});
+    button.addEventListener('touchend',()=>clearInterval(interval));
+  }
+
+  setupHoldButton(delayMinusBtn,-0.001);
+  setupHoldButton(delayPlusBtn,+0.001);
+
+  // 音量
   masterVolEl.addEventListener('input',()=>{
     volLabel.textContent=Number(masterVolEl.value).toFixed(2);
     if(masterGain) masterGain.gain.value=Number(masterVolEl.value);
