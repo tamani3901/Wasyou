@@ -53,7 +53,7 @@
 
   <div id="voicesContainer"></div>
 
-  <p class="note">0.01秒単位で遅延を設定可能。最大20声まで同時に輪唱。</p>
+  <p class="note">0.01秒単位で遅延を設定可能。最大30声まで同時に輪唱。</p>
 
 <script>
 (async()=>{
@@ -102,7 +102,7 @@
 
   function buildVoiceControls(){
     voicesContainer.innerHTML='';
-    const n=Math.max(1,Math.min(20,Number(numVoicesEl.value)));
+    const n=Math.max(1,Math.min(30,Number(numVoicesEl.value)));
     for(let i=0;i<n;i++){
       const div=document.createElement('div');
       div.className='voice-item';
