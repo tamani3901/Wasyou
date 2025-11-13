@@ -3,23 +3,23 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>輪唱プレイヤー（100声対応）</title>
+<title>輪唱プレイヤー（100声対応・0.001秒）</title>
 <style>
   body{font-family:system-ui,-apple-system,"ヒラギノ角ゴ ProN","Hiragino Kaku Gothic ProN","メイリオ",Meiryo,sans-serif;padding:18px;background:#f6f8fa}
   .row{display:flex;gap:8px;align-items:center;margin:8px 0}
   label{min-width:110px}
   input[type="range"]{width:220px}
-  #voicesContainer{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+  #voicesContainer{display:flex;flex-direction:column;gap:6px;margin-top:8px;max-height:60vh;overflow-y:auto}
   .voice-item{display:flex;gap:8px;align-items:center}
-  button{padding:8px 12px;cursor:pointer}
+  button{padding:4px 8px;cursor:pointer}
   .note{font-size:13px;color:#555}
 </style>
 </head>
 <body>
-  <h2>輪唱プレイヤー（最大100声）</h2>
+  <h2>輪唱プレイヤー（最大100声・0.001秒単位）</h2>
 
   <div class="row">
-    <label>MP3ファイル</label>
+    <label>MP3/MP4ファイル</label>
     <input id="file" type="file" accept=".mp3, .mp4, audio/*, video/*">
   </div>
 
@@ -30,8 +30,10 @@
 
   <div class="row">
     <label>遅延（秒）</label>
-    <input id="delaySec" type="range" min="0" max="1" step="0.01" value="1.0">
-    <span id="delayLabel">1.0s</span>
+    <input id="delaySec" type="range" min="0" max="1" step="0.001" value="1.000">
+    <span id="delayLabel">1.000s</span>
+    <button id="delayMinus">-0.001</button>
+    <button id="delayPlus">+0.001</button>
   </div>
 
   <div class="row">
@@ -53,7 +55,7 @@
 
   <div id="voicesContainer"></div>
 
-  <p class="note">0.01秒単位で遅延を設定可能。最大100声まで同時に輪唱。</p>
+  <p class="note">0.001秒単位で遅延を設定可能。最大100声まで同時に輪唱。</p>
 
 <script>
 (async()=>{
@@ -62,6 +64,8 @@
   const numVoicesEl=document.getElementById('numVoices');
   const delaySecEl=document.getElementById('delaySec');
   const delayLabel=document.getElementById('delayLabel');
+  const delayMinusBtn=document.getElementById('delayMinus');
+  const delayPlusBtn=document.getElementById('delayPlus');
   const masterVolEl=document.getElementById('masterVol');
   const volLabel=document.getElementById('volLabel');
   const loopEl=document.getElementById('loop');
@@ -79,27 +83,43 @@
     }
   }
 
-  delaySecEl.addEventListener('input',()=>delayLabel.textContent=parseFloat(delaySecEl.value).toFixed(2)+'s');
+  // 遅延スライダー更新
+  delaySecEl.addEventListener('input',()=>delayLabel.textContent=parseFloat(delaySecEl.value).toFixed(3)+'s');
+
+  // 遅延ボタン
+  delayMinusBtn.addEventListener('click',()=>{
+    let v=parseFloat(delaySecEl.value);
+    v=Math.max(0,v-0.001);
+    delaySecEl.value=v.toFixed(3);
+    delayLabel.textContent=v.toFixed(3)+'s';
+  });
+  delayPlusBtn.addEventListener('click',()=>{
+    let v=parseFloat(delaySecEl.value);
+    v=Math.min(1,v+0.001);
+    delaySecEl.value=v.toFixed(3);
+    delayLabel.textContent=v.toFixed(3)+'s';
+  });
+
+  // マスター音量
   masterVolEl.addEventListener('input',()=>{
     volLabel.textContent=Number(masterVolEl.value).toFixed(2);
     if(masterGain) masterGain.gain.value=Number(masterVolEl.value);
   });
 
+  // ファイル読み込み
   fileEl.addEventListener('change',async()=>{
     const file=fileEl.files&&fileEl.files[0];
     if(!file)return;
     ensureAudioCtx();
     const ab=await file.arrayBuffer();
-    try{
-      audioBuffer=await audioCtx.decodeAudioData(ab);
-    }catch(e){
-      audioBuffer=await new Promise((res,rej)=>{audioCtx.decodeAudioData(ab,res,rej)});
-    }
+    try{audioBuffer=await audioCtx.decodeAudioData(ab);}
+    catch(e){audioBuffer=await new Promise((res,rej)=>{audioCtx.decodeAudioData(ab,res,rej)});}
     previewBtn.disabled=false;
     playBtn.disabled=false;
     buildVoiceControls();
   });
 
+  // 声スライダー生成
   function buildVoiceControls(){
     voicesContainer.innerHTML='';
     const n=Math.max(1,Math.min(100,Number(numVoicesEl.value)));
@@ -118,6 +138,7 @@
   }
   numVoicesEl.addEventListener('change',buildVoiceControls);
 
+  // 再生
   function startPlayback(singlePreview=false){
     if(!audioBuffer)return;
     ensureAudioCtx();
@@ -149,6 +170,7 @@
     playBtn.disabled=true;
   }
 
+  // 停止
   function stopPlayback(){
     activeSources.forEach(o=>{
       try{o.src.stop()}catch{}
@@ -161,6 +183,7 @@
     playBtn.disabled=false;
   }
 
+  // イベント
   playBtn.addEventListener('click',()=>{
     ensureAudioCtx();
     if(audioCtx.state==='suspended') audioCtx.resume();
