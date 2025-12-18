@@ -2,43 +2,31 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>輪唱プレイヤー 完全版</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>輪唱プレイヤー（完全版）</title>
 
 <style>
 body{
-  font-family:system-ui,-apple-system,"メイリオ",sans-serif;
+  font-family: system-ui;
   background:#f6f8fa;
-  padding:16px
+  padding:16px;
 }
+h2{margin-top:0}
 .row{display:flex;align-items:center;gap:8px;margin:6px 0}
+input[type="range"]{width:220px}
 .track{
   border:1px solid #ccc;
+  padding:10px;
+  margin:10px 0;
   background:#fff;
-  padding:8px;
-  margin:10px 0
 }
-button{padding:4px 8px}
-input[type=range]{width:180px}
-.small{font-size:12px;color:#555}
+button{cursor:pointer}
+.note{font-size:13px;color:#555}
 </style>
 </head>
 
 <body>
-<h2>輪唱プレイヤー（最大5音源・100声）</h2>
-
-<div class="row">
-  <label>音源追加</label>
-  <input id="file" type="file" multiple accept=".mp3,.mp4,audio/*,video/*">
-</div>
-
-<div class="row">
-  <label>声の遅延</label>
-  <input id="voiceDelay" type="range" min="0" max="1" step="0.001" value="0.200">
-  <span id="voiceDelayLabel">0.200s</span>
-  <button id="vdMinus">-</button>
-  <button id="vdPlus">+</button>
-</div>
+<h2>輪唱プレイヤー</h2>
 
 <div class="row">
   <label>全体音量</label>
@@ -47,202 +35,181 @@ input[type=range]{width:180px}
 </div>
 
 <div class="row">
-  <button id="play">再生</button>
-  <button id="stop">停止</button>
+  <label>声の遅延</label>
+  <input id="voiceDelay" type="range" min="0" max="1" step="0.001" value="0.500">
+  <span id="voiceDelayLabel">0.500s</span>
+  <button id="vdMinus">-0.001</button>
+  <button id="vdPlus">+0.001</button>
 </div>
 
-<hr>
+<div class="row">
+  <label>ループ</label>
+  <input id="loop" type="checkbox" checked>
+</div>
 
 <div id="tracks"></div>
 
-<p class="small">
-・音源は最大5つ<br>
-・声は合計100声まで<br>
-・±ボタンは長押し対応
+<div class="row">
+  <button id="play">再生</button>
+  <button id="stop" disabled>停止</button>
+</div>
+
+<p class="note">
+最大5音源 / 合計100声。  
+音源は自動で左右に分離される。
 </p>
 
 <script>
-let audioCtx;
-let masterGain;
-let buffers=[];
-let sources=[];
-
-const fileEl=document.getElementById("file");
-const tracksEl=document.getElementById("tracks");
-const voiceDelayEl=document.getElementById("voiceDelay");
-const voiceDelayLabel=document.getElementById("voiceDelayLabel");
-const masterVolEl=document.getElementById("masterVol");
-const masterVolLabel=document.getElementById("masterVolLabel");
+let audioCtx, masterGain;
+let tracks = [];
+let activeSources = [];
 
 function ensureCtx(){
   if(!audioCtx){
-    audioCtx=new AudioContext();
-    masterGain=audioCtx.createGain();
+    audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    masterGain = audioCtx.createGain();
     masterGain.connect(audioCtx.destination);
   }
 }
 
-// ===== 長押し共通 =====
-function hold(btn,fn){
-  let timer;
-  const start=()=>{
-    fn();
-    timer=setInterval(fn,50);
+function holdButton(btn, delta, target, label){
+  let t;
+  const step=()=>{
+    let v=parseFloat(target.value);
+    v=Math.max(0,Math.min(1,v+delta));
+    target.value=v.toFixed(3);
+    label.textContent=v.toFixed(3)+"s";
   };
-  const stop=()=>clearInterval(timer);
-
-  btn.addEventListener("mousedown",start);
-  btn.addEventListener("mouseup",stop);
-  btn.addEventListener("mouseleave",stop);
-  btn.addEventListener("touchstart",e=>{e.preventDefault();start();});
-  btn.addEventListener("touchend",stop);
+  btn.onmousedown=()=>{step();t=setInterval(step,50)};
+  btn.onmouseup=btn.onmouseleave=()=>clearInterval(t);
+  btn.ontouchstart=e=>{e.preventDefault();step();t=setInterval(step,80)};
+  btn.ontouchend=()=>clearInterval(t);
 }
 
-// ===== 声の遅延 =====
-function updateVoiceDelay(){
-  voiceDelayLabel.textContent=(+voiceDelayEl.value).toFixed(3)+"s";
-}
-voiceDelayEl.oninput=updateVoiceDelay;
+/* 全体UI */
+const voiceDelay=document.getElementById("voiceDelay");
+const voiceDelayLabel=document.getElementById("voiceDelayLabel");
+voiceDelay.oninput=()=>voiceDelayLabel.textContent=parseFloat(voiceDelay.value).toFixed(3)+"s";
+holdButton(vdMinus,-0.001,voiceDelay,voiceDelayLabel);
+holdButton(vdPlus, 0.001,voiceDelay,voiceDelayLabel);
 
-hold(vdMinus,()=>{
-  let v=+voiceDelayEl.value;
-  v=Math.max(0,v-0.001);
-  voiceDelayEl.value=v.toFixed(3);
-  updateVoiceDelay();
-});
-hold(vdPlus,()=>{
-  let v=+voiceDelayEl.value;
-  v=Math.min(1,v+0.001);
-  voiceDelayEl.value=v.toFixed(3);
-  updateVoiceDelay();
-});
-
-// ===== 全体音量 =====
-masterVolEl.oninput=()=>{
-  masterGain.gain.value=masterVolEl.value;
-  masterVolLabel.textContent=(+masterVolEl.value).toFixed(2);
+masterVol.oninput=()=>{
+  masterVolLabel.textContent=parseFloat(masterVol.value).toFixed(2);
+  if(masterGain) masterGain.gain.value=masterVol.value;
 };
 
-// ===== ファイル読み込み =====
-fileEl.onchange=async()=>{
-  ensureCtx();
-  buffers=[];
-  tracksEl.innerHTML="";
-  const files=[...fileEl.files].slice(0,5);
+/* トラックUI生成 */
+const tracksDiv=document.getElementById("tracks");
 
-  for(const f of files){
-    const buf=await audioCtx.decodeAudioData(await f.arrayBuffer());
-    buffers.push({
-      name:f.name,
-      buffer:buf,
-      delay:0,
-      voices:10,
-      volume:1
-    });
-  }
-  buildTracks();
-};
+for(let i=0;i<5;i++){
+  const div=document.createElement("div");
+  div.className="track";
+  div.innerHTML=`
+    <strong>音源 ${i+1}</strong><br>
 
-// ===== 音源UI生成 =====
-function buildTracks(){
-  tracksEl.innerHTML="";
-  buffers.forEach((t,i)=>{
-    const d=document.createElement("div");
-    d.className="track";
-    d.innerHTML=`
-      <b>${t.name}</b>
+    <div class="row">
+      <input type="file" accept=".mp3,.mp4,audio/*,video/*">
+    </div>
 
-      <div class="row">
-        <label>音源遅延</label>
-        <input type="range" min="0" max="5" step="0.001" value="0">
-        <span>0.000s</span>
-        <button>-</button>
-        <button>+</button>
-      </div>
+    <div class="row">
+      <label>声の数</label>
+      <input type="number" min="1" max="100" value="3">
+    </div>
 
-      <div class="row">
-        <label>音量</label>
-        <input type="range" min="0" max="1" step="0.01" value="1">
-      </div>
+    <div class="row">
+      <label>開始遅延</label>
+      <input type="range" min="0" max="1" step="0.001" value="0">
+      <span>0.000s</span>
+      <button>-0.001</button>
+      <button>+0.001</button>
+    </div>
 
-      <div class="row">
-        <label>声の数</label>
-        <input type="number" min="1" max="100" value="10">
-      </div>
-    `;
-    tracksEl.appendChild(d);
+    <div class="row">
+      <label>音量</label>
+      <input type="range" min="0" max="1" step="0.01" value="1">
+    </div>
+  `;
+  tracksDiv.appendChild(div);
 
-    const delayRange=d.querySelector("input[type=range]");
-    const delayLabel=delayRange.nextElementSibling;
-    const minusBtn=delayLabel.nextElementSibling;
-    const plusBtn=minusBtn.nextElementSibling;
+  const file=div.querySelector('input[type=file]');
+  const voices=div.querySelector('input[type=number]');
+  const delay=div.querySelector('input[type=range]');
+  const delayLabel=div.querySelector('span');
+  const dMinus=div.querySelectorAll('button')[0];
+  const dPlus=div.querySelectorAll('button')[1];
+  const vol=div.querySelectorAll('input[type=range]')[1];
 
-    delayRange.oninput=()=>{
-      t.delay=+delayRange.value;
-      delayLabel.textContent=(+delayRange.value).toFixed(3)+"s";
-    };
+  delay.oninput=()=>delayLabel.textContent=parseFloat(delay.value).toFixed(3)+"s";
+  holdButton(dMinus,-0.001,delay,delayLabel);
+  holdButton(dPlus, 0.001,delay,delayLabel);
 
-    hold(minusBtn,()=>{
-      let v=+delayRange.value;
-      v=Math.max(0,v-0.001);
-      delayRange.value=v.toFixed(3);
-      delayRange.oninput();
-    });
-    hold(plusBtn,()=>{
-      let v=+delayRange.value;
-      v=v+0.001;
-      delayRange.value=v.toFixed(3);
-      delayRange.oninput();
-    });
-
-    d.querySelectorAll("input[type=range]")[1]
-      .oninput=e=>t.volume=e.target.value;
-
-    d.querySelector("input[type=number]")
-      .oninput=e=>t.voices=e.target.value;
-  });
+  tracks.push({file,voices,delay,vol,buffer:null});
 }
 
-// ===== 再生 =====
-play.onclick=()=>{
+/* 再生 */
+play.onclick=async()=>{
   ensureCtx();
-  stop.onclick();
+  if(audioCtx.state==="suspended") audioCtx.resume();
+  stopAll();
 
-  const totalVoices=buffers.reduce((a,b)=>a+ +b.voices,0);
-  if(totalVoices>100){
-    alert("声の合計が100を超えてる");
-    return;
-  }
+  masterGain.gain.value=masterVol.value;
+  const baseTime=audioCtx.currentTime;
+  const loop=document.getElementById("loop").checked;
 
-  const now=audioCtx.currentTime;
-  const trackCount=buffers.length;
+  const validTracks=tracks.filter(t=>t.file.files[0]);
+  const totalTracks=validTracks.length;
 
-  buffers.forEach((t,ti)=>{
-    const pan=trackCount===1?0:(ti/(trackCount-1))*2-1;
-    const panner=audioCtx.createStereoPanner();
-    panner.pan.value=pan;
+  let totalVoices=0;
 
-    for(let i=0;i<t.voices;i++){
+  for(let ti=0;ti<validTracks.length;ti++){
+    const t=validTracks[ti];
+    if(!t.buffer){
+      const ab=await t.file.files[0].arrayBuffer();
+      t.buffer=await audioCtx.decodeAudioData(ab);
+    }
+
+    const pan = totalTracks===1 ? 0 : (ti/(totalTracks-1))*2-1;
+
+    for(let i=0;i<t.voices.value;i++){
+      if(totalVoices>=100) break;
+      totalVoices++;
+
       const src=audioCtx.createBufferSource();
-      const g=audioCtx.createGain();
       src.buffer=t.buffer;
-      g.gain.value=t.volume;
+      src.loop=loop;
 
-      src.connect(g);
-      g.connect(panner);
+      const gain=audioCtx.createGain();
+      gain.gain.value=t.vol.value;
+
+      const panner=audioCtx.createStereoPanner();
+      panner.pan.value=pan;
+
+      src.connect(gain);
+      gain.connect(panner);
       panner.connect(masterGain);
 
-      src.start(now+t.delay+i*voiceDelayEl.value);
-      sources.push(src);
+      src.start(
+        baseTime +
+        parseFloat(t.delay.value) +
+        i*parseFloat(voiceDelay.value)
+      );
+
+      activeSources.push(src);
     }
-  });
+  }
+
+  play.disabled=true;
+  stop.disabled=false;
 };
 
-// ===== 停止 =====
-stop.onclick=()=>{
-  sources.forEach(s=>{try{s.stop()}catch{}});
-  sources=[];
-};
+/* 停止 */
+function stopAll(){
+  activeSources.forEach(s=>{try{s.stop()}catch{}});
+  activeSources=[];
+  play.disabled=false;
+  stop.disabled=true;
+}
+stop.onclick=stopAll;
 </script>
 </body>
 </html>
