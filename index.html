@@ -88,11 +88,11 @@
     }
   }
 
-  function setupHold(btn,stepFn){
+  function setupHold(btn,fn){
     let id;
-    btn.onmousedown=()=>{stepFn();id=setInterval(stepFn,50)};
+    btn.onmousedown=()=>{fn();id=setInterval(fn,50)};
     btn.onmouseup=btn.onmouseleave=()=>clearInterval(id);
-    btn.ontouchstart=e=>{e.preventDefault();stepFn();id=setInterval(stepFn,80)};
+    btn.ontouchstart=e=>{e.preventDefault();fn();id=setInterval(fn,80)};
     btn.ontouchend=()=>clearInterval(id);
   }
 
@@ -151,46 +151,43 @@
         <input type="range" min="0" max="10" step="0.001" value="${trackDelays[i]}">
         <span>${trackDelays[i].toFixed(3)}s</span>
         <button>-0.001</button>
-        <button>+0.001</button>
-        <br>
+        <button>+0.001</button><br>
 
         音量
         <input type="range" min="0" max="1" step="0.01" value="${trackVolumes[i]}">
-        <span>${trackVolumes[i].toFixed(2)}</span>
-        <br>
+        <span>${trackVolumes[i].toFixed(2)}</span><br>
 
         声数
         <input type="number" min="0" max="100" value="${trackVoices[i]}" style="width:60px">
       `;
 
-      const [delayRange,delayLabelSpan,minusBtn,plusBtn,
-             volRange,volLabelSpan,
-             voiceInput] = d.querySelectorAll('input,span,button');
+      const [delayRange,delaySpan,minusBtn,plusBtn,
+             volRange,volSpan,
+             voiceInput]=d.querySelectorAll('input,span,button');
 
       delayRange.oninput=e=>{
-        trackDelays[i]=Number(e.target.value);
-        delayLabelSpan.textContent=trackDelays[i].toFixed(3)+'s';
+        trackDelays[i]=+e.target.value;
+        delaySpan.textContent=trackDelays[i].toFixed(3)+'s';
       };
 
       setupHold(minusBtn,()=>{
         trackDelays[i]=Math.max(0,trackDelays[i]-0.001);
         delayRange.value=trackDelays[i].toFixed(3);
-        delayLabelSpan.textContent=trackDelays[i].toFixed(3)+'s';
+        delaySpan.textContent=trackDelays[i].toFixed(3)+'s';
       });
-
       setupHold(plusBtn,()=>{
         trackDelays[i]=Math.min(10,trackDelays[i]+0.001);
         delayRange.value=trackDelays[i].toFixed(3);
-        delayLabelSpan.textContent=trackDelays[i].toFixed(3)+'s';
+        delaySpan.textContent=trackDelays[i].toFixed(3)+'s';
       });
 
       volRange.oninput=e=>{
-        trackVolumes[i]=Number(e.target.value);
-        volLabelSpan.textContent=trackVolumes[i].toFixed(2);
+        trackVolumes[i]=+e.target.value;
+        volSpan.textContent=trackVolumes[i].toFixed(2);
       };
 
       voiceInput.oninput=e=>{
-        trackVoices[i]=Number(e.target.value)||0;
+        trackVoices[i]=+e.target.value||0;
         limitVoices();
       };
 
@@ -211,6 +208,11 @@
     }
   }
 
+  function calcPan(i,total){
+    if(total===1) return 0;
+    return (i/(total-1))*2-1;
+  }
+
   function stop(){
     activeSources.forEach(s=>{try{s.stop()}catch{}});
     activeSources=[];
@@ -222,17 +224,25 @@
     ensureCtx();
     stop();
     const now=audioCtx.currentTime;
-    const voiceDelay=parseFloat(delaySecEl.value);
+    const voiceDelay=+delaySecEl.value;
+    const totalTracks=audioBuffers.length;
 
     audioBuffers.forEach((buf,t)=>{
+      const panVal=calcPan(t,totalTracks);
       for(let v=0;v<trackVoices[t];v++){
         const src=audioCtx.createBufferSource();
         const g=audioCtx.createGain();
+        const p=audioCtx.createStereoPanner();
+
         src.buffer=buf;
         src.loop=loopEl.checked;
         g.gain.value=trackVolumes[t];
+        p.pan.value=panVal;
+
         src.connect(g);
-        g.connect(masterGain);
+        g.connect(p);
+        p.connect(masterGain);
+
         src.start(now+trackDelays[t]+v*voiceDelay);
         activeSources.push(src);
       }
