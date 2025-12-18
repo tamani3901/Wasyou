@@ -88,27 +88,28 @@
     }
   }
 
+  function setupHold(btn,stepFn){
+    let id;
+    btn.onmousedown=()=>{stepFn();id=setInterval(stepFn,50)};
+    btn.onmouseup=btn.onmouseleave=()=>clearInterval(id);
+    btn.ontouchstart=e=>{e.preventDefault();stepFn();id=setInterval(stepFn,80)};
+    btn.ontouchend=()=>clearInterval(id);
+  }
+
   function updateDelayLabel(){
     delayLabel.textContent=parseFloat(delaySecEl.value).toFixed(3)+'s';
   }
   updateDelayLabel();
   delaySecEl.oninput=updateDelayLabel;
 
-  function setupHold(btn,delta){
-    let id;
-    const step=()=>{
-      let v=parseFloat(delaySecEl.value);
-      v=Math.max(0,Math.min(1,v+delta));
-      delaySecEl.value=v.toFixed(3);
-      updateDelayLabel();
-    };
-    btn.onmousedown=()=>{step();id=setInterval(step,50)};
-    btn.onmouseup=btn.onmouseleave=()=>clearInterval(id);
-    btn.ontouchstart=e=>{e.preventDefault();step();id=setInterval(step,80)};
-    btn.ontouchend=()=>clearInterval(id);
-  }
-  setupHold(delayMinus,-0.001);
-  setupHold(delayPlus,0.001);
+  setupHold(delayMinus,()=>{
+    delaySecEl.value=Math.max(0,(+delaySecEl.value-0.001)).toFixed(3);
+    updateDelayLabel();
+  });
+  setupHold(delayPlus,()=>{
+    delaySecEl.value=Math.min(1,(+delaySecEl.value+0.001)).toFixed(3);
+    updateDelayLabel();
+  });
 
   masterVolEl.oninput=()=>{
     volLabel.textContent=Number(masterVolEl.value).toFixed(2);
@@ -145,37 +146,63 @@
       d.className='track';
       d.innerHTML=`
         <div class="fname">${fileNames[i]}</div>
+
         開始遅延
         <input type="range" min="0" max="10" step="0.001" value="${trackDelays[i]}">
-        <span>${trackDelays[i].toFixed(3)}s</span><br>
+        <span>${trackDelays[i].toFixed(3)}s</span>
+        <button>-0.001</button>
+        <button>+0.001</button>
+        <br>
+
         音量
         <input type="range" min="0" max="1" step="0.01" value="${trackVolumes[i]}">
-        <span>${trackVolumes[i].toFixed(2)}</span><br>
+        <span>${trackVolumes[i].toFixed(2)}</span>
+        <br>
+
         声数
         <input type="number" min="0" max="100" value="${trackVoices[i]}" style="width:60px">
       `;
-      const inputs=d.querySelectorAll('input');
-      inputs[0].oninput=e=>{
+
+      const [delayRange,delayLabelSpan,minusBtn,plusBtn,
+             volRange,volLabelSpan,
+             voiceInput] = d.querySelectorAll('input,span,button');
+
+      delayRange.oninput=e=>{
         trackDelays[i]=Number(e.target.value);
-        e.target.nextElementSibling.textContent=trackDelays[i].toFixed(3)+'s';
+        delayLabelSpan.textContent=trackDelays[i].toFixed(3)+'s';
       };
-      inputs[1].oninput=e=>{
+
+      setupHold(minusBtn,()=>{
+        trackDelays[i]=Math.max(0,trackDelays[i]-0.001);
+        delayRange.value=trackDelays[i].toFixed(3);
+        delayLabelSpan.textContent=trackDelays[i].toFixed(3)+'s';
+      });
+
+      setupHold(plusBtn,()=>{
+        trackDelays[i]=Math.min(10,trackDelays[i]+0.001);
+        delayRange.value=trackDelays[i].toFixed(3);
+        delayLabelSpan.textContent=trackDelays[i].toFixed(3)+'s';
+      });
+
+      volRange.oninput=e=>{
         trackVolumes[i]=Number(e.target.value);
-        e.target.nextElementSibling.textContent=trackVolumes[i].toFixed(2);
+        volLabelSpan.textContent=trackVolumes[i].toFixed(2);
       };
-      inputs[2].oninput=e=>{
+
+      voiceInput.oninput=e=>{
         trackVoices[i]=Number(e.target.value)||0;
         limitVoices();
       };
+
       tracksDiv.appendChild(d);
     });
   }
 
   function limitVoices(){
     let sum=trackVoices.reduce((a,b)=>a+b,0);
-    if(sum<=100) return;
+    if(sum<=100)return;
     let over=sum-100;
-    for(let i=trackVoices.length-1;i>=0 && over>0;i--){
+    for(let i=trackVoices.length-1;i>=0&&over>0;i--){
       const cut=Math.min(trackVoices[i],over);
       trackVoices[i]-=cut;
       tracksDiv.querySelectorAll('.track')[i]
@@ -185,9 +212,7 @@
   }
 
   function stop(){
-    activeSources.forEach(s=>{
-      try{s.stop()}catch{}
-    });
+    activeSources.forEach(s=>{try{s.stop()}catch{}});
     activeSources=[];
     stopBtn.disabled=true;
     playBtn.disabled=false;
@@ -197,7 +222,7 @@
     ensureCtx();
     stop();
     const now=audioCtx.currentTime;
-    const delay=parseFloat(delaySecEl.value);
+    const voiceDelay=parseFloat(delaySecEl.value);
 
     audioBuffers.forEach((buf,t)=>{
       for(let v=0;v<trackVoices[t];v++){
@@ -208,7 +233,7 @@
         g.gain.value=trackVolumes[t];
         src.connect(g);
         g.connect(masterGain);
-        src.start(now+trackDelays[t]+v*delay);
+        src.start(now+trackDelays[t]+v*voiceDelay);
         activeSources.push(src);
       }
     });
