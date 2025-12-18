@@ -1,251 +1,203 @@
 <!doctype html>
 <html lang="ja">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>輪唱プレイヤー（最大5音源・100声）</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>輪唱プレイヤー 完全版</title>
+
 <style>
-  body{font-family:system-ui,-apple-system,"ヒラギノ角ゴ ProN","メイリオ",Meiryo,sans-serif;padding:16px;background:#f6f8fa}
-  .row{display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap}
-  label{min-width:90px}
-  input[type="range"]{width:200px}
-  #tracks{display:flex;flex-direction:column;gap:10px;margin-top:10px}
-  .track{background:#fff;padding:8px;border-radius:6px;box-shadow:0 0 4px #0001}
-  button{padding:4px 8px}
-  .small{font-size:12px;color:#555}
-  .fname{font-weight:600;word-break:break-all}
+body{
+  font-family:system-ui,-apple-system,"メイリオ",sans-serif;
+  background:#f6f8fa;
+  padding:16px
+}
+.row{display:flex;align-items:center;gap:8px;margin:6px 0}
+.track{
+  border:1px solid #ccc;
+  background:#fff;
+  padding:8px;
+  margin:8px 0
+}
+button{padding:4px 8px}
+input[type=range]{width:180px}
+.small{font-size:12px;color:#555}
 </style>
 </head>
-<body>
 
-<h2>輪唱プレイヤー（最大5音源・100声）</h2>
+<body>
+<h2>輪唱プレイヤー（最大5音源 / 100声）</h2>
 
 <div class="row">
-  <label>音源</label>
+  <label>音源追加</label>
   <input id="file" type="file" multiple accept=".mp3,.mp4,audio/*,video/*">
 </div>
 
 <div class="row">
-  <label>声遅延</label>
-  <input id="delaySec" type="range" min="0" max="1" step="0.001" value="0.500">
-  <span id="delayLabel">0.500s</span>
-  <button id="delayMinus">-0.001</button>
-  <button id="delayPlus">+0.001</button>
+  <label>声の遅延</label>
+  <input id="voiceDelay" type="range" min="0" max="1" step="0.001" value="0.200">
+  <span id="voiceDelayLabel">0.200s</span>
+  <button id="vdMinus">-</button>
+  <button id="vdPlus">+</button>
 </div>
 
 <div class="row">
   <label>全体音量</label>
   <input id="masterVol" type="range" min="0" max="1" step="0.01" value="1">
-  <span id="volLabel">1.00</span>
+  <span id="masterVolLabel">1.00</span>
 </div>
 
 <div class="row">
-  <label>ループ</label>
-  <input id="loop" type="checkbox" checked>
+  <button id="play">再生</button>
+  <button id="stop">停止</button>
 </div>
 
-<div class="row">
-  <button id="playBtn" disabled>再生</button>
-  <button id="stopBtn" disabled>停止</button>
-</div>
+<hr>
 
 <div id="tracks"></div>
 
 <p class="small">
-音源ごとに「開始遅延・音量・声数」を設定可能。合計声数は最大100。
+・音源は最大5つ<br>
+・声は合計100声まで<br>
+・音源は自動で左右に配置
 </p>
 
 <script>
-(()=>{
-  let audioCtx=null;
-  let masterGain=null;
-  let activeSources=[];
+let audioCtx;
+let masterGain;
+let buffers=[];
+let sources=[];
 
-  let audioBuffers=[];
-  let fileNames=[];
-  let trackDelays=[];
-  let trackVolumes=[];
-  let trackVoices=[];
+const fileEl=document.getElementById("file");
+const tracksEl=document.getElementById("tracks");
+const voiceDelayEl=document.getElementById("voiceDelay");
+const voiceDelayLabel=document.getElementById("voiceDelayLabel");
+const masterVolEl=document.getElementById("masterVol");
+const masterVolLabel=document.getElementById("masterVolLabel");
 
-  const fileEl=document.getElementById('file');
-  const delaySecEl=document.getElementById('delaySec');
-  const delayLabel=document.getElementById('delayLabel');
-  const delayMinus=document.getElementById('delayMinus');
-  const delayPlus=document.getElementById('delayPlus');
-  const masterVolEl=document.getElementById('masterVol');
-  const volLabel=document.getElementById('volLabel');
-  const loopEl=document.getElementById('loop');
-  const playBtn=document.getElementById('playBtn');
-  const stopBtn=document.getElementById('stopBtn');
-  const tracksDiv=document.getElementById('tracks');
-
-  function ensureCtx(){
-    if(!audioCtx){
-      audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-      masterGain=audioCtx.createGain();
-      masterGain.gain.value=Number(masterVolEl.value);
-      masterGain.connect(audioCtx.destination);
-    }
+function ensureCtx(){
+  if(!audioCtx){
+    audioCtx=new AudioContext();
+    masterGain=audioCtx.createGain();
+    masterGain.connect(audioCtx.destination);
   }
+}
 
-  function setupHold(btn,stepFn){
-    let id;
-    btn.onmousedown=()=>{stepFn();id=setInterval(stepFn,50)};
-    btn.onmouseup=btn.onmouseleave=()=>clearInterval(id);
-    btn.ontouchstart=e=>{e.preventDefault();stepFn();id=setInterval(stepFn,80)};
-    btn.ontouchend=()=>clearInterval(id);
-  }
-
-  function updateDelayLabel(){
-    delayLabel.textContent=parseFloat(delaySecEl.value).toFixed(3)+'s';
-  }
-  updateDelayLabel();
-  delaySecEl.oninput=updateDelayLabel;
-
-  setupHold(delayMinus,()=>{
-    delaySecEl.value=Math.max(0,(+delaySecEl.value-0.001)).toFixed(3);
-    updateDelayLabel();
-  });
-  setupHold(delayPlus,()=>{
-    delaySecEl.value=Math.min(1,(+delaySecEl.value+0.001)).toFixed(3);
-    updateDelayLabel();
-  });
-
-  masterVolEl.oninput=()=>{
-    volLabel.textContent=Number(masterVolEl.value).toFixed(2);
-    if(masterGain) masterGain.gain.value=Number(masterVolEl.value);
+function hold(btn,fn){
+  let t;
+  btn.onmousedown=()=>{
+    fn(); t=setInterval(fn,50);
   };
+  btn.onmouseup=btn.onmouseleave=()=>clearInterval(t);
+}
 
-  fileEl.onchange=async()=>{
-    ensureCtx();
-    audioBuffers=[];
-    fileNames=[];
-    trackDelays=[];
-    trackVolumes=[];
-    trackVoices=[];
-    tracksDiv.innerHTML='';
+hold(vdMinus,()=>adjVoiceDelay(-0.001));
+hold(vdPlus,()=>adjVoiceDelay(0.001));
 
-    const files=[...fileEl.files].slice(0,5);
-    for(const f of files){
-      const ab=await f.arrayBuffer();
-      const buf=await audioCtx.decodeAudioData(ab);
-      audioBuffers.push(buf);
-      fileNames.push(f.name);
-      trackDelays.push(0);
-      trackVolumes.push(1);
-      trackVoices.push(Math.floor(100/files.length));
-    }
-    buildTracks();
-    playBtn.disabled=false;
-  };
+function adjVoiceDelay(d){
+  let v=+voiceDelayEl.value;
+  v=Math.max(0,Math.min(1,v+d));
+  voiceDelayEl.value=v.toFixed(3);
+  voiceDelayLabel.textContent=v.toFixed(3)+"s";
+}
 
-  function buildTracks(){
-    tracksDiv.innerHTML='';
-    audioBuffers.forEach((_,i)=>{
-      const d=document.createElement('div');
-      d.className='track';
-      d.innerHTML=`
-        <div class="fname">${fileNames[i]}</div>
+voiceDelayEl.oninput=()=>voiceDelayLabel.textContent=(+voiceDelayEl.value).toFixed(3)+"s";
+masterVolEl.oninput=()=>{
+  masterGain.gain.value=masterVolEl.value;
+  masterVolLabel.textContent=(+masterVolEl.value).toFixed(2);
+};
 
-        開始遅延
-        <input type="range" min="0" max="10" step="0.001" value="${trackDelays[i]}">
-        <span>${trackDelays[i].toFixed(3)}s</span>
-        <button>-0.001</button>
-        <button>+0.001</button>
-        <br>
+fileEl.onchange=async()=>{
+  ensureCtx();
+  buffers=[];
+  tracksEl.innerHTML="";
+  const files=[...fileEl.files].slice(0,5);
 
-        音量
-        <input type="range" min="0" max="1" step="0.01" value="${trackVolumes[i]}">
-        <span>${trackVolumes[i].toFixed(2)}</span>
-        <br>
-
-        声数
-        <input type="number" min="0" max="100" value="${trackVoices[i]}" style="width:60px">
-      `;
-
-      const [delayRange,delayLabelSpan,minusBtn,plusBtn,
-             volRange,volLabelSpan,
-             voiceInput] = d.querySelectorAll('input,span,button');
-
-      delayRange.oninput=e=>{
-        trackDelays[i]=Number(e.target.value);
-        delayLabelSpan.textContent=trackDelays[i].toFixed(3)+'s';
-      };
-
-      setupHold(minusBtn,()=>{
-        trackDelays[i]=Math.max(0,trackDelays[i]-0.001);
-        delayRange.value=trackDelays[i].toFixed(3);
-        delayLabelSpan.textContent=trackDelays[i].toFixed(3)+'s';
-      });
-
-      setupHold(plusBtn,()=>{
-        trackDelays[i]=Math.min(10,trackDelays[i]+0.001);
-        delayRange.value=trackDelays[i].toFixed(3);
-        delayLabelSpan.textContent=trackDelays[i].toFixed(3)+'s';
-      });
-
-      volRange.oninput=e=>{
-        trackVolumes[i]=Number(e.target.value);
-        volLabelSpan.textContent=trackVolumes[i].toFixed(2);
-      };
-
-      voiceInput.oninput=e=>{
-        trackVoices[i]=Number(e.target.value)||0;
-        limitVoices();
-      };
-
-      tracksDiv.appendChild(d);
+  for(const f of files){
+    const buf=await audioCtx.decodeAudioData(await f.arrayBuffer());
+    buffers.push({
+      name:f.name,
+      buffer:buf,
+      delay:0,
+      voices:10,
+      volume:1
     });
   }
+  buildTracks();
+};
 
-  function limitVoices(){
-    let sum=trackVoices.reduce((a,b)=>a+b,0);
-    if(sum<=100)return;
-    let over=sum-100;
-    for(let i=trackVoices.length-1;i>=0&&over>0;i--){
-      const cut=Math.min(trackVoices[i],over);
-      trackVoices[i]-=cut;
-      tracksDiv.querySelectorAll('.track')[i]
-        .querySelector('input[type=number]').value=trackVoices[i];
-      over-=cut;
+function buildTracks(){
+  tracksEl.innerHTML="";
+  buffers.forEach((t,i)=>{
+    const d=document.createElement("div");
+    d.className="track";
+    d.innerHTML=`
+      <b>${t.name}</b>
+
+      <div class="row">
+        <label>音源遅延</label>
+        <input data-d="${i}" type="range" min="0" max="5" step="0.001" value="0">
+        <span>0.000s</span>
+        <button data-m="${i}">-</button>
+        <button data-p="${i}">+</button>
+      </div>
+
+      <div class="row">
+        <label>音量</label>
+        <input data-v="${i}" type="range" min="0" max="1" step="0.01" value="1">
+      </div>
+
+      <div class="row">
+        <label>声の数</label>
+        <input data-n="${i}" type="number" min="1" max="100" value="10">
+      </div>
+    `;
+    tracksEl.appendChild(d);
+
+    const r=d.querySelector("[data-d]");
+    const s=r.nextElementSibling;
+    r.oninput=()=>{t.delay=+r.value;s.textContent=r.value+"s"};
+
+    hold(d.querySelector("[data-m]"),()=>{r.value=(+r.value-0.001).toFixed(3);r.oninput()});
+    hold(d.querySelector("[data-p]"),()=>{r.value=(+r.value+0.001).toFixed(3);r.oninput()});
+
+    d.querySelector("[data-v]").oninput=e=>t.volume=e.target.value;
+    d.querySelector("[data-n]").oninput=e=>t.voices=e.target.value;
+  });
+}
+
+play.onclick=()=>{
+  ensureCtx();
+  stop.onclick();
+
+  const totalVoices=buffers.reduce((a,b)=>a+ +b.voices,0);
+  if(totalVoices>100){alert("声が100超えてる");return;}
+
+  const now=audioCtx.currentTime;
+  const trackCount=buffers.length;
+
+  buffers.forEach((t,ti)=>{
+    const pan=trackCount===1?0:(ti/(trackCount-1))*2-1;
+    const panner=audioCtx.createStereoPanner();
+    panner.pan.value=pan;
+
+    for(let i=0;i<t.voices;i++){
+      const src=audioCtx.createBufferSource();
+      const g=audioCtx.createGain();
+      src.buffer=t.buffer;
+      g.gain.value=t.volume;
+      src.connect(g);
+      g.connect(panner);
+      panner.connect(masterGain);
+      src.start(now+t.delay+i*voiceDelayEl.value);
+      sources.push(src);
     }
-  }
+  });
+};
 
-  function stop(){
-    activeSources.forEach(s=>{try{s.stop()}catch{}});
-    activeSources=[];
-    stopBtn.disabled=true;
-    playBtn.disabled=false;
-  }
-
-  function play(){
-    ensureCtx();
-    stop();
-    const now=audioCtx.currentTime;
-    const voiceDelay=parseFloat(delaySecEl.value);
-
-    audioBuffers.forEach((buf,t)=>{
-      for(let v=0;v<trackVoices[t];v++){
-        const src=audioCtx.createBufferSource();
-        const g=audioCtx.createGain();
-        src.buffer=buf;
-        src.loop=loopEl.checked;
-        g.gain.value=trackVolumes[t];
-        src.connect(g);
-        g.connect(masterGain);
-        src.start(now+trackDelays[t]+v*voiceDelay);
-        activeSources.push(src);
-      }
-    });
-
-    playBtn.disabled=true;
-    stopBtn.disabled=false;
-  }
-
-  playBtn.onclick=play;
-  stopBtn.onclick=stop;
-})();
+stop.onclick=()=>{
+  sources.forEach(s=>{try{s.stop()}catch{}});
+  sources=[];
+};
 </script>
-
 </body>
 </html>
