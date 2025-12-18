@@ -16,7 +16,7 @@ body{
   border:1px solid #ccc;
   background:#fff;
   padding:8px;
-  margin:8px 0
+  margin:10px 0
 }
 button{padding:4px 8px}
 input[type=range]{width:180px}
@@ -25,7 +25,7 @@ input[type=range]{width:180px}
 </head>
 
 <body>
-<h2>輪唱プレイヤー（最大5音源 / 100声）</h2>
+<h2>輪唱プレイヤー（最大5音源・100声）</h2>
 
 <div class="row">
   <label>音源追加</label>
@@ -58,7 +58,7 @@ input[type=range]{width:180px}
 <p class="small">
 ・音源は最大5つ<br>
 ・声は合計100声まで<br>
-・音源は自動で左右に配置
+・±ボタンは長押し対応
 </p>
 
 <script>
@@ -82,30 +82,48 @@ function ensureCtx(){
   }
 }
 
+// ===== 長押し共通 =====
 function hold(btn,fn){
-  let t;
-  btn.onmousedown=()=>{
-    fn(); t=setInterval(fn,50);
+  let timer;
+  const start=()=>{
+    fn();
+    timer=setInterval(fn,50);
   };
-  btn.onmouseup=btn.onmouseleave=()=>clearInterval(t);
+  const stop=()=>clearInterval(timer);
+
+  btn.addEventListener("mousedown",start);
+  btn.addEventListener("mouseup",stop);
+  btn.addEventListener("mouseleave",stop);
+  btn.addEventListener("touchstart",e=>{e.preventDefault();start();});
+  btn.addEventListener("touchend",stop);
 }
 
-hold(vdMinus,()=>adjVoiceDelay(-0.001));
-hold(vdPlus,()=>adjVoiceDelay(0.001));
+// ===== 声の遅延 =====
+function updateVoiceDelay(){
+  voiceDelayLabel.textContent=(+voiceDelayEl.value).toFixed(3)+"s";
+}
+voiceDelayEl.oninput=updateVoiceDelay;
 
-function adjVoiceDelay(d){
+hold(vdMinus,()=>{
   let v=+voiceDelayEl.value;
-  v=Math.max(0,Math.min(1,v+d));
+  v=Math.max(0,v-0.001);
   voiceDelayEl.value=v.toFixed(3);
-  voiceDelayLabel.textContent=v.toFixed(3)+"s";
-}
+  updateVoiceDelay();
+});
+hold(vdPlus,()=>{
+  let v=+voiceDelayEl.value;
+  v=Math.min(1,v+0.001);
+  voiceDelayEl.value=v.toFixed(3);
+  updateVoiceDelay();
+});
 
-voiceDelayEl.oninput=()=>voiceDelayLabel.textContent=(+voiceDelayEl.value).toFixed(3)+"s";
+// ===== 全体音量 =====
 masterVolEl.oninput=()=>{
   masterGain.gain.value=masterVolEl.value;
   masterVolLabel.textContent=(+masterVolEl.value).toFixed(2);
 };
 
+// ===== ファイル読み込み =====
 fileEl.onchange=async()=>{
   ensureCtx();
   buffers=[];
@@ -125,6 +143,7 @@ fileEl.onchange=async()=>{
   buildTracks();
 };
 
+// ===== 音源UI生成 =====
 function buildTracks(){
   tracksEl.innerHTML="";
   buffers.forEach((t,i)=>{
@@ -135,42 +154,65 @@ function buildTracks(){
 
       <div class="row">
         <label>音源遅延</label>
-        <input data-d="${i}" type="range" min="0" max="5" step="0.001" value="0">
+        <input type="range" min="0" max="5" step="0.001" value="0">
         <span>0.000s</span>
-        <button data-m="${i}">-</button>
-        <button data-p="${i}">+</button>
+        <button>-</button>
+        <button>+</button>
       </div>
 
       <div class="row">
         <label>音量</label>
-        <input data-v="${i}" type="range" min="0" max="1" step="0.01" value="1">
+        <input type="range" min="0" max="1" step="0.01" value="1">
       </div>
 
       <div class="row">
         <label>声の数</label>
-        <input data-n="${i}" type="number" min="1" max="100" value="10">
+        <input type="number" min="1" max="100" value="10">
       </div>
     `;
     tracksEl.appendChild(d);
 
-    const r=d.querySelector("[data-d]");
-    const s=r.nextElementSibling;
-    r.oninput=()=>{t.delay=+r.value;s.textContent=r.value+"s"};
+    const delayRange=d.querySelector("input[type=range]");
+    const delayLabel=delayRange.nextElementSibling;
+    const minusBtn=delayLabel.nextElementSibling;
+    const plusBtn=minusBtn.nextElementSibling;
 
-    hold(d.querySelector("[data-m]"),()=>{r.value=(+r.value-0.001).toFixed(3);r.oninput()});
-    hold(d.querySelector("[data-p]"),()=>{r.value=(+r.value+0.001).toFixed(3);r.oninput()});
+    delayRange.oninput=()=>{
+      t.delay=+delayRange.value;
+      delayLabel.textContent=(+delayRange.value).toFixed(3)+"s";
+    };
 
-    d.querySelector("[data-v]").oninput=e=>t.volume=e.target.value;
-    d.querySelector("[data-n]").oninput=e=>t.voices=e.target.value;
+    hold(minusBtn,()=>{
+      let v=+delayRange.value;
+      v=Math.max(0,v-0.001);
+      delayRange.value=v.toFixed(3);
+      delayRange.oninput();
+    });
+    hold(plusBtn,()=>{
+      let v=+delayRange.value;
+      v=v+0.001;
+      delayRange.value=v.toFixed(3);
+      delayRange.oninput();
+    });
+
+    d.querySelectorAll("input[type=range]")[1]
+      .oninput=e=>t.volume=e.target.value;
+
+    d.querySelector("input[type=number]")
+      .oninput=e=>t.voices=e.target.value;
   });
 }
 
+// ===== 再生 =====
 play.onclick=()=>{
   ensureCtx();
   stop.onclick();
 
   const totalVoices=buffers.reduce((a,b)=>a+ +b.voices,0);
-  if(totalVoices>100){alert("声が100超えてる");return;}
+  if(totalVoices>100){
+    alert("声の合計が100を超えてる");
+    return;
+  }
 
   const now=audioCtx.currentTime;
   const trackCount=buffers.length;
@@ -185,15 +227,18 @@ play.onclick=()=>{
       const g=audioCtx.createGain();
       src.buffer=t.buffer;
       g.gain.value=t.volume;
+
       src.connect(g);
       g.connect(panner);
       panner.connect(masterGain);
+
       src.start(now+t.delay+i*voiceDelayEl.value);
       sources.push(src);
     }
   });
 };
 
+// ===== 停止 =====
 stop.onclick=()=>{
   sources.forEach(s=>{try{s.stop()}catch{}});
   sources=[];
